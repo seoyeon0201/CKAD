@@ -576,3 +576,7 @@ spec:
         - `kubectl expose pod nginx --port=80 --name nginx-service --type=NodePort --dry-run=client -o yaml` 또는 `kubectl create service nodeport nginx --tcp=80:80 --node-port=30080 --dry-run=client -o yaml` : `nodePort` 타입의 service 생성 후 nginx port 80, nodeport는 30080
 
     - 참고: <https://kubernetes.io/docs/reference/kubectl/conventions/>
+
+- `kubectl api-resources`로 줄임말 확인 가능
+
+- 명령어 꿀팁 <https://kubernetes.io/docs/reference/kubectl/cheatsheet/>
