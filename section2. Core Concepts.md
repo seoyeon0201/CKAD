@@ -580,3 +580,7 @@ spec:
 - `kubectl api-resources`로 줄임말 확인 가능
 
 - 명령어 꿀팁 <https://kubernetes.io/docs/reference/kubectl/cheatsheet/>
+
+- Kubernetes 관련 Blog <https://coffeewhale.com/k8s-isnt-containers>
+
+- 자격증 응시 전 모의환경으로 2번 테스트 가능 => killer.sh
