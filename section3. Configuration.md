@@ -235,6 +235,193 @@ spec:
 - pod는 deployment의 하위개념이므로 deployment 변경 시 자동으로 기존 pod는 삭제되고 새로운 pod 생성
 - `kubectl edit deployment my-deployment`
 
+## Environment Variables
+
+1. Environment Variables
+
+- `docker run -e APP_COLOR=pink simple-webapp-color`
+
+- pod definition file
+  - `env` property 사용. env는 array로, env 속성 하의 모든 항목은 배열 내의 항목을 나타내는 대시(-)부터 시작
+  - env 하위의 name은 환경변수의 이름으로 container와 함께 사용 가능, value는 해당 환경변수의 값
+  - 아래의 yaml 파일의 environment value는 `key-value` 포맷을 이용하여 환경변수 직접 지정
+
+`pod-definition.yaml`
+```
+apiVersion: v1
+kind: Pod
+metadata:
+  name: simple-webapp-color
+spec:
+  containers:
+    - name: simple-webapp-color
+      image: simple-webapp-color
+      ports:
+        - containerPort: 8080
+      env:
+        - name: APP_COLOR
+          value: pink
+```
+
+2. ENV Value Type
+
+- Plain Key Value
+```
+env:
+  - name: APP_COLOR
+    value: pink
+```
+
+- ConfigMaps
+```
+env:
+  - name: APP_COLOR
+    valueFrom:
+      configMapKeyRef:
+```
+- Secrets
+```
+env:
+  - name: APP_COLOR
+    valueFrom:
+      secretKeyRef:
+```
+
+- key-value와 configmap,secret의 차이점은 값을 지정하는 대신값을 지정하고 configmap이나 secret의 사양에 따른다는 점
+
+## ConfigMaps
+
+- 이전 강의에서 pod definition file에서 environment variable 정의하는 법 보여줌 => pod definition file이 많은 경우 Query file에 저장된 environment data를 관리하기 어려움
+
+1. ConfigMap
+
+- ConfigMap을 사용하면 pod definition file에서 environment variable 정보를 가져와 중앙에서 관리 가능
+
+- ConfigMap은 Kubernetes의 key-value 쌍으로 configuration data를 전달하는데 사용
+- pod가 생성되면 pod에 configmap을 삽입해 key-value 쌍이 environment value로 사용되어 pod의 container 안에서 host된 application program을 위해 동작
+
+- 기존 pod-definition
+`pod-definition.yaml`
+```
+...
+spec:
+  containers:
+      ...
+      env:
+        - name: APP_COLOR
+          value: blue
+        - name: APP_MODE
+          value: prod
+```
+- ConfigMap 사용
+`ConfigMap`
+```
+APP_COLOR: blue
+APP_MODE: prod
+```
+`pod-definition.yaml`
+```
+...
+spec:
+  containers:
+      ...
+      envFrom:
+        - configMapRef:
+            name: app-config
+```
+
+2. ConfigMap 구성
+
+- STEP1: Create ConfigMap: Imperative
+  - Imperative: `kubectl create configmap`. ConfigMap definition file 생성 X
+  - 1. 명령어에서 `--from-literal`를 이용해 명령 자체에서 key-value 쌍 직접 지정
+    - `kubectl create configmap [CONFIG-NAME] --from-literal=[KEY]=[VALUE]`
+    - `kubectl create configmap app-config --from-literal=APP_COLOR=blue`
+    - 둘 이상의 config를 지정하고 싶은 경우 `--from-literal` 옵션 여러 번 지정
+  - 2. 명령어에서 `--from-file`을 이용해 파일을 통해 config data 지정
+    - `kubectl create configmap [CONFIG-NAME] --from-file=[PATH-TO-FILE]`
+    - `kubectl create configmap app-config --from-file=app_config.properties`
+
+- STEP1: Create ConfigMap: Declarative
+  - Declarative: `kubectl create -f`. ConfigMap definition file 생성
+  - `config-map.yaml` 이름의 definition file 생성. Pod의 definition과 달리 `spec 대신 data` field 존재
+    - data field 아래에 key-value 형식으로 config data 추가
+
+  `config-map.yaml`  
+  ```
+  apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: app-config
+  data:
+    APP_COLOR: blue
+    APP_MODE: prod
+  ```
+
+  - configmap은 나중에 pod와 관련해 사용하기에 이름을 적절히 붙여줘야함
+
+  `app-config`
+  ```
+  APP_COLOR: blue
+  APP_MODE: prod
+  ```
+  `mysql-config`
+  ```
+  port: 3306
+  max_allowed_packet: 128M
+  ```
+  `redis-config`
+  ```
+  port: 6379
+  rdb-compression: yes
+  ```
+
+- STEP2: Inject into Pod
+  - 1. `ENV` : Pod definition file에 `envFrom` property 추가
+  - `envFrom`은 리스트 형태로, 필요한 만큼 environment variable을 넘길 수 있으며 list의 각 항목은 configmap과 일치
+  
+  `pod-definition.yaml`
+  ```
+  apiVersion: v1
+  kind: Pod
+  metadata:
+    name: simple-webapp-color
+    labels:
+      name: simple-webapp-color
+  spec:
+    containers:
+      - name: simple-webapp-color
+        image: simple-webapp-color
+        ports:
+          - containerPort: 8080
+        envFrom:
+          - configMapRef:
+              name: config-map  //configmap 이름
+  ```
+  - `kubectl create -f pod-definition.yaml`을 통해 configmap에 나타난 blue 배경으로 만들어진 웹 프로그램 생성
+  - 2. `SINGLE ENV`: 단일 환경 변수
+  ```
+  env:
+    - name: APP_COLOR
+      valueFrom:
+        configMapKeyRef:
+          name: app-config
+          key: APP_COLOR
+  ```
+  - 3. `VOLUME`: 전체 데이터를 파일로 volume에 넣을 수 있음
+  ```
+  volumes:
+    - name: app-config-volume
+      configMap:
+        name: app-config
+  ```
+  
+3. 명령어
+
+- `kubectl get configmaps` : configmap 조회
+- `kubectl describe configmaps`: config data를 data 섹션 아래에 나열
+
+
 ## Labs 실습
 
 1. Docker Image
@@ -308,3 +495,9 @@ Q9. What command is run at container startup?
 Q10. Create a pod with the given specifications. By default it displays a blue backgroud. Set the given command line arguments to change it to green.
 
 - Solution: `kubectl run nginx --image=nginx -- <arg1> <arg2> ... <argN>` 사용해 argument 지정 가능 => `kubectl run webapp-green --image=kodekloud/webapp-color -- --color green`
+
+3. ConfigMaps
+
+Q10. 다시해보기
+
+![Alt text](image-6.png)
