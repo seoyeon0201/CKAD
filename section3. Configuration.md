@@ -93,6 +93,46 @@ ENTRYPOINT FLASK_APP=/opt/source-code/app.py flask run
 
 ## Commands and Arguments in Docker
 
+1. Docker container
+
+- Docker container에 Ubuntu 실행 `docker run ubuntu`
+    - `docker ps`로 실행 중인 container를 조회하면 아무것도 나오지 않음
+    - `docker ps -a`로 전체 container 조회시 Exited STATUS로 나타남
+    - VM과 달리 container는 OS를 호스팅하도록 되어 있지 않음. container는 특정 작업이나 process를 실행하도록 만들어지고 작업이 끝나면 container가 종료됨. ex. seb server, application server, database instance, 연산이나 분석 등
+    - 따라서 container는 내부의 프로세스가 동작 중이어야 동작
+
+- container 내에서 실행되는 프로세스 정의
+    - 인기 Docker image인 `nginx`에 대한 Docker file에는 `CMD`라는 INSTRUCTION 존재 `CMD ["nginx"]`
+    - `CMD`란 프로그램을 정의하는 명령의 약자로, 시작되면 container 내에서 실행될 명령
+    - 위에서 진행한 작업은 ubuntu OS로 container를 실행하는 것. 해당 이미지에 대한 docker file에는 `CMD ["bash"]`
+    - `BASH`는 web server나 database server와 같은 프로세스가 아니라 터미널에서 input을 듣는 shell. 터미널을 찾지 못하는 경우 Exit
+    - Docker가 default로 실행 중일 때 container에 terminal을 연결하지 않음. 따라서 container에 terminal에 연결하지 않으므로 Bash 프로그램은 terminal을 찾지 못해 Exit
+
+2. continaer run command 지정
+
+- `docker run [IMAGE] [COMMAND]` Docker run command에 추가 옵션 추가 => 이미지에 지정된 기본 명령 재정의
+    - `docker run ubuntu sleep 5` 
+
+- Docker file에 `CMD [COMMAND] [PARAMETER]` 영구적으로 지정   
+    - Docker file 재정의
+    - `docker build -t ubuntu-sleeper .` 로 image build
+    - `docker run ubuntu-sleeper`
+
+```
+FROM Ubuntu
+CMD sleep 5     //or CMD ["sleep","5"]
+```
+
+- `docker run` 실행 시 sleep 시간을 지정하고 싶은 경우 
+    - 안 좋은 예시: Docker file은 `FROM Ubuntu CMD sleep 5`, `docker run ubuntu-sleeper sleep 10`
+    - Docker file은 `FROM Ubuntu ENTRYPOINT ["sleep"]`, `docker run ubuntu-sleeper 10` 
+        - 위의 예시와 다르게 ENTRYPOINT를 sleep으로 두어 docker run 실행 시 sleep을 또다시 작성할 필요 X
+        - 하지만 이 경우 docker run ubuntu-sleeper 만 실행하는 경우 오류 발생 => default 지정이 안되어있기 때문
+    - Docker file은 `FROM Ubuntu ENTRYPOINT ["sleep"] CMD ["5"]`, `docker run ubuntu-sleeper`의 경우 sleep 5 동작, `docker run ubuntu-sleeper 10`의 경우 sleep 10 동작
+
+- runtime 동안 ENTRYPOINT를 수정하고 싶은 경우, `docker run --entrypoint sleep2.0 ubuntu-sleeper 10`을 하는 경우, `ENTRYPOINT ["sleep2.0"]`으로 수정되고 10초동안 동작
+
+
 ## Labs 실습 
 
 1. Docker Image
