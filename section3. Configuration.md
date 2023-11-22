@@ -421,6 +421,131 @@ spec:
 - `kubectl get configmaps` : configmap 조회
 - `kubectl describe configmaps`: config data를 data 섹션 아래에 나열
 
+## Secrets
+
+1. Secrets
+
+- 민감한 정보를 저장하는데 쓰임. ex.password, key
+- configmap과 비슷하지만 인코딩된 포맷에 저장되어있음
+
+2. Secrets 구성
+
+- STEP1. Create Secret : Imperative
+  - Imperative: `kubectl create secret generic`. Secret definition file 생성 X
+  - 1. 명령어에서 `--from-literal`를 이용해 명령 자체에서 key-value 쌍 직접 지정
+    - `kubectl create secret generic [SECRET-NAME] --from-literal=[KEY]=[VALUE]`
+    - `kubectl create secret generic app-secret --from-literal=DB_HOST=mysql --from-literal=DB_User=root --from-literal=DB_Password=paswrd`
+    - 둘 이상의 config를 지정하고 싶은 경우 `--from-literal` 옵션 여러 번 지정
+  - 2. 명령어에서 `--from-file`을 이용해 파일을 통해 secret data 지정
+    - `kubectl create secret generic [SECRET-NAME] --from-file=[PATH-TO-FILE]`
+    - `kubectl create secret generic app-secret --from-file=app_secret.properties`
+
+- STEP1. Create Secret : Declarative
+  - Declarative: `kubectl create -f`. Secret definition file 생성 
+  - yaml에 저장하는 데이터를 인코딩된 형식으로 데이터 지정 
+  - 인코딩 값은 `echo -n 'mysql' | base64`와 같이 원하는 데이터를 넣어 출력
+  - 인코딩한 데이터를 디코딩하고 싶은 경우 `echo -n 'bXlzcWw=' | base64 --decode`와 같이 디코딩하고 싶은 데이터를 넣어 출력
+
+`secret-data.yaml`
+```
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app-secret
+data:
+  DB_Host: bXlzcWw=       #mysql
+  DB_User: cm9vdA==       #root
+  DB_Password: cGFzd3Jk   #paswrd
+```
+
+
+- STEP2. Inject into Pod
+  - 1. `ENV` : Pod definition file에 `envFrom` property 추가
+  - `envFrom`은 리스트 형태로, 필요한 만큼 environment variable을 넘길 수 있으며 list의 각 항목은 secret과 일치
+
+`pod-definition.yaml`
+```
+apiVersion: v1
+kind: Pod
+metadata:
+  name: simple-webapp-color
+  labels:
+    name: simple-webapp-color
+spec:
+  containers:
+    - name: simple-webapp-color
+      image: simple-webapp-color
+      ports:
+        - containerPort: 8080
+      envFrom:
+        - secretRef:
+            name: app-secret
+```
+
+  - 2. `SINGLE ENV`  
+
+```
+env:
+  - name: DB_Password
+    valueFrom:
+      secretKeyRef:
+        name: app-secret
+        key: DB_Password
+```
+
+  - 3. `VOLUME`
+    - `ls /opt/app-secret-volumes` 명령어로 존재하는 Secret key 이름의 파일 조회 가능
+    - `cat /opt/app-secret-volumes/DB_Password` 명령어로 key에 대한 value 조회 가능
+```
+volumes:
+  - name: app-secret-volume
+    secret:
+      secretName: app-secret
+```
+
+3. Note on Secrets
+
+- Secrets are not Encrypted. Only encoded
+  - secret은 암호화되어있지 않고 인코딩되어 있기에 누구나 파일을 조회할 수 있고 secret 조회 가능
+  - Do not check-in Secret objects to SCM along with code.
+
+- Secrets are not encrypted in ETCD 
+  - Enable encryption at rest
+- Anyone able to create pods/deployments in the same namespace can access the secrets
+  - Configure least-privilege access to Secrets - `RBAC` : RBAC을 구성해 액세스 제한 고려
+
+- Consider `third-party secrets store providers` AWS Provider, Azure Provider, GCP Provider, Vault Provider : secret은 etcd가 아닌 외부 secret store provider에 저장되고 provider는 보안의 대부분을 처리
+
+## A quick note about Secrets
+
+- secret은 데이터를 base64 형식으로 인코딩해 저장하여 누구나 쉽게 해독 가능
+<https://kubernetes.io/docs/concepts/configuration/secret/>
+
+- secret 모범 사례
+  - secret definition file을 source code repository에 체크인하지 않음
+  - 암호화된 상태로 ETCD에 저장되도록 암호화 활성화
+<https://kubernetes.io/docs/tasks/administer-cluster/encrypt-data/>
+
+- Kubernetes의 Secret 사용
+  - secret은 해당 노드의 pod가 필요로하는 경우에만 노드로 전송
+  - Kubelet은 secret을 tmpfs에 저장하여 disk 저장소에 기록되지 않도록 함
+  - secret에 의존하는 Pod가 삭제되면 kubelet은 secret data의 로컬 복사본도 삭제
+
+<https://kubernetes.io/docs/concepts/configuration/secret/#protections>
+<https://kubernetes.io/docs/concepts/configuration/secret/#risks>
+
+- Kubernetes에서 민감한 데이터를 처리하는데 Helm Secrets, HashiCorp Vault와 같은 도구를 사용하는 것도 하나의 방법
+
+## Demo: Encrypting Secret Data at Rest
+
+## Docker Security
+## Security Contexts
+## Service Account
+## Resource Requirements
+## Taints and Tolerations
+## Node Selectors
+## Node Affinity
+## Certification Tips - Student Tips
 
 ## Labs 실습
 
@@ -498,6 +623,56 @@ Q10. Create a pod with the given specifications. By default it displays a blue b
 
 3. ConfigMaps
 
-Q10. 다시해보기
+- configmap을 cm으로 축약 가능
 
-![Alt text](image-6.png)
+Q9. Create a new ConfigMap for the webapp-color POD. Use the spec given below.
+ConfigName Name: webapp-config-map
+Data: APP_COLOR=darkblue
+
+`kubectl create cm webapp-config-map --from-literal=APP_COLOR=darkblue`
+
+Q10. Update the environment variable on the POD to use the newly created ConfigMap. Note: Delete and recreate the POD. Only make the necessary changes. Do not modify the name of the Pod.
+
+`pod.yaml`
+```
+spec:
+  containers:
+    - env:
+        - name: APP_COLOR
+          valueFrom:  #원래는 value였는데 해당 값을 configmap에서 가져옴
+            configMapKeyRef:  #configMap 참조
+              name: webapp-config-map #configmap name
+              key: APP_COLOR  #참조할 key. 해당 key의 value를 configmap에서 가져옴
+```
+
+4. Secrets
+
+Q6. The reason the application is failed is because we have not created the secrets yet. Create a new secret named db-secret with the data given below. You may follow any one of the methods discussed in lecture to create the secret.
+
+CheckCompleteIncomplete
+
+- `k create secret generic db-secret --from-literal=DB_Host=sql01 --from-literal=DB_User=root --from-literal=DB_Password=password123`
+
+- `generic` 잊지 말 것
+
+Q7. Configure webapp-pod to load environment variables from the newly created secret.
+
+- `envFrom`은 모든 secret data 를 container environment variable로 정의. secret의 key가 pod의 environment variable name이 됨
+
+```
+apiVersion: v1
+kind: Pod
+metadata:
+  name: webapp-pod
+  labels:
+    name: webapp-pod
+spec:
+  containers:
+    - name: webapp
+      image: kodekloud/simple-webapp-mysql
+      envFrom:
+        - secretRef:
+            name: db-secret
+```
+
+- Solution: `kubectl edit pod webapp-pod`에 envFrom을 추가한 후 `kubectl replace --force -f [복사본 경로]`
