@@ -311,7 +311,228 @@ spec:
 
 ## Headless Services
 
+1. Service
+
+- application이 다른 application을 가리키려면 Service를 통해서 가능 
+- 부하 분산 장치 역할
+- 데이터베이스를 위한 서비스 생성 `mysql`
+- ClusterIP와 DNS name 존재
+  - clusterIP 10.96.0.10 DNS mysql.default.svc.cluster.local
+- 사용자가 mysql 서비스를 읽는 것은 괜찮지만 서비스에 작성할 수는 없음
+- master 데이터베이스 서버만을 가리키도록 해야함
+  - 각 pod에 도달할 수 있는 DNS entry 필요 => `headless service`
+
+2. Headless Service
+
+- 일반 Service처럼 생성되지만 고유한 IP(clusterIP) 존재 X
+- 어떤 부하 분산도 수행하지 않고 pod 이름과 하위 domain을 이용해 DNS Entry만을 생성
+  - headless service 이름이 mysql-h인 경우, `mysql-0.mysql-h.default.svc.cluster.local`, `mysql-1.mysql-h.default.svc.cluster.local`, `mysql-2.mysql-h.default.svc.cluster.local`
+
+3. definition file
+
+- Service
+  - `ClusterIP`를 None으로 설정
+
+`headless-service.yaml`
+```
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-h
+spec:
+  ports:
+    - port: 3306
+  selector:
+    app: mysql
+  clusterIP: None
+```
+
+- StatefulSet
+  - `spec.serviceName` 설정
+
+`statefulset-definition.yaml`
+```
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql-deployment
+  labels:
+    app: mysql
+spec:
+  serviceName: mysql-h
+  replicas: 3
+  matchLabels:
+    app: mysql
+  tmeplate:
+    metadata:
+      name: myapp-pod
+      labels:
+        app: mysql
+    spec:
+      containers:
+        - name: mysql
+          image: mysql
+```
+
+- DNS
+
+`mysql-0.mysql-h.default.svc.cluster.local`, `mysql-1.mysql-h.default.svc.cluster.local`, `mysql-2.mysql-h.default.svc.cluster.local`
+ 
 ## Storage in StatefulSets
+
+1. Static Provisioning
+
+- `pv-definition.yaml`, `pvc-definition.yaml`, `pod-definition.yaml`
+
+`pv-definition.yaml`
+```
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv-vol1
+spec:
+  accessModes:
+    - ReadWriteOnce #중요
+  capacity:
+    storage: 500Mi  #중요
+  gcePersistentDisk:
+    pdName: pd-disk
+    fsType: ext4
+```
+
+`pvc-definition.yaml`
+```
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: data-volume #중요
+spec:
+  accessModes:
+    - ReadWriteOnce #중요
+  storageClassName: google-storage
+  resources:
+    requests:
+      storage: 500Mi  #중요
+```
+
+`pod-definition.yaml`
+```
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mysql
+spec:
+  containers:
+    - image: mysql
+      name: mysql
+      volumeMounts:
+        - mountPath: /var/lib/mysql
+          name: data-volume
+  volumes:
+    - name: data-volume
+      persistentVolumeClaim:
+        claimName: data-volume  #중요
+```
+
+2. Dynamic Provisioning
+
+- `sc-definition.yaml`, `pvc-definition.yaml`, `pod-definition.yaml`
+
+`sc-definition.yaml`
+```
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: google-storage
+provisioner: kubernetes.io/gce-pd
+```
+
+`pvc-definition.yaml`
+```
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: data-volume #중요
+spec:
+  accessModes:
+    - ReadWriteOnce #중요
+  storageClassName: google-storage
+  resources:
+    requests:
+      storage: 500Mi  #중요
+```
+
+`pod-definition.yaml`
+```
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mysql
+spec:
+  containers:
+    - image: mysql
+      name: mysql
+      volumeMounts:
+        - mountPath: /var/lib/mysql
+          name: data-volume
+  volumes:
+    - name: data-volume
+      persistentVolumeClaim:
+        claimName: data-volume  #중요
+```
+
+3. VolumeClaimTemplate
+
+- statefulset으로 만든 pod는 같은 volume 사용. pod별로 다른 volume 사용하길 원함
+  - pod마다 pv,pvc 필요
+- VolumeClaimTemplate은 pvc를 수동으로 만들어 statefulset definition file에 지정
+
+- `sc-definition.yaml`, `statefulset-definition.yaml`
+
+`sc-definition.yaml`
+```
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: google-storage
+provisioner: kubernetes.io/gce-pd
+```
+
+`statefulset-definition.yaml`
+```
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql
+  labels:
+    app: mysql
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+        - name: mysql
+          image: mysql
+          volumeMounts:
+            - mountPath: /var/lib/mysql
+              name: data-volume
+  volumeClaimTemplates:
+    - metadata:
+        name: data-volume
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: google-storage
+        resource:
+          requests:
+            storage: 500Mi
+```
 
 ## Labs 실습
 
