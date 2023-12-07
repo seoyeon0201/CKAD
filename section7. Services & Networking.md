@@ -360,15 +360,199 @@ spec:
 ⭐ `kubectl create ingress <ingress-name> --rule="host/path=service:port"` 명령어로 ingress resource 생성 가능
 
 - ex. `kubectl create ingress ingress-test --rule="wear.my-online-store.com/wear*=wear-service:80"`
- 
-## Article: Ingress
 
-## FAQ - What is the rewrite-target option?
 
 ## Network Policies
 
+1. Traffic
+
+- 웹 서버(프론트엔드) 앱 서버(백엔드API)과 데이터베이스 서버를 통한 traffic의 간단한 예시
+    - 사용자가 80 port로 웹서버에 요청 전송
+    - 웹서버가 백엔드의 API 서버에 5000 port로 요청 전송
+    - API서버가 데이터베이스 서버의 3306 port로 데이터 페치해 사용자에게 다시 전송 
+
+2. Traffic 유형
+
+- Traffic은 `Ingress`와 `Egress` 유형으로 나뉨
+
+- 위 예시
+    - Frontend
+        - Ingress: 사용자로부터 프론트엔드 서버 80 port에 들어오는 traffic
+        - Egress: 백엔드 서버의 5000 port로 가는 traffic
+    - Backend
+        - Ingress: web server로부터 5000 port에 들어오는 traffic
+        - Egress: database server 3306 port로 나가는 traffic
+    - Database
+        - Ingress: app server로부터 3306 port로 들어오는 traffic
+
+3. Network Security
+
+- Kubernetes Networing 전제조건 => 어떤 상황이든 `pod 간의 통신이 가능해야함`
+    - IP, pod name, service를 통해 가능
+    - Kubernetes는 기본적으로 `All Allow` rule이 구성되어 어떤 pod에서든 traffic이 클러스터 내 (다른 node여도) 다른 포드 또는 서비스로 전송 가능
+
+- 특정 pod가 다른 pod와 직접적으로 통신하는 것을 원하지 않는 경우 => `Network Policy 구현`
+    - Front pod에서는 DB 서버에 직접적인 통신을 할 수 없고, 오직 API server에서만 DB 서버에 traffic 허용하도록
+
+- Network Policy는 Kubernetes namespace에 있는 object
+    - network policy를 하나 이상의 pod에 link
+    - `network policy 내의 Rule 정의 가능`
+    - ex.위 예시의 경우 3306 port API pod에서만 Ingress Traffic 허용
+
+4. Network policy - Selector 
+
+- Network policy에 pod 적용 또는 link 방법 => `podSelector 사용`
+
+`pod-definition.yaml`
+```
+labels:
+    role: db
+```
+
+`network-policy-definition.yaml`
+```
+podSelector:
+    matchLabels:
+        role: db
+```
+
+5. Network policy - RUle
+
+- `policyType`
+    - Network policy 아래의 traffic ingress와 egress를 허용할지 또는 모두 허용할지 Rule 명시 
+- `ingress`
+    - ingress 받을 pod 선택 > podSelector 사용 & 허용 port 지정 
+- `egress`
+    - egress 받을 pod 선택 > podSelector 사용 & 허용 port 지정 
+
+`network policy spec`
+```
+policyTypes:
+    - Ingress
+ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+                name: api-pod
+      ports:
+        - protocol: TCP
+          port: 3306
+```
+
+6. definition-file
+`policy-definition.yaml`
+```
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+    name: db-policy
+spec:
+    podSelector:
+        matchLabels:
+            role: db
+    policyTypes:
+        - Ingress
+    ingress:
+        - from:
+            - podSelector:
+                matchLabels:
+                    name: api-pod
+        ports:
+            - protocol: TCP
+            port: 3306
+```
+
+7. Network 지원 솔루션
+
+- Kubernetes는 각 container에 고유 IP를 자체할당하지 않고 타사 솔루션에 맡기기에 해당 솔루션의 network 방식을 지원할 수도, 지원하지 않을 수도 있음
+
+- Solutions that Support Network Policies
+    - Kube-router
+    - Calico
+    - Romana
+    - Weave-net
+
+- Solutions that DO NOT Support Network Policies
+    - Flannel
+
 ## Developing network policies
 
+1. definition file
+
+- `spec.podSelector` : network policy로 보호하고자 하는 pod와 연결
+    - 이때 모든 traffic 차단
+- `spec.policyTypes` : 직전에 연결한 pod 기준으로 처리할 traffic type 지정
+    - `Ingress` 또는 `Egress`. 혹은 둘 다 가능
+- `spec.ingress`
+    - `.from` : traffic이 들어오는 근원 pod 지정
+        - `podSelector` 사용해 선택할 label 지정
+        - `namespaceSelector` 사용해 namespace 여러 곳에 동일한 label의 pod가 존재하는 경우 하나의 namespace의 pod만 접근할 수 있도록 설정 
+        - podSelector 없이 namespaceSelector만 존재할 수 있으며 그럴 경우 해당 namespace의 모든 pod만 접근 가능
+        - `ipBlock` : 해당 cluster 내의 IP가 아닌 backup server와 같이 외부 IP와의 traffic 처리 관리
+        - 위의 rule들은 `-`로 구분되어 AND로 연결된 rule인지 OR로 연결된 rule인지 결정
+    - `.ports` : 보호하고자 하는 pod에서 traffic이 허용된 port 번호
+- `spec.egress`
+    - `.to` : traffic이 나가는 pod 또는 IP 지정
+        - ingress와 모두 동일
+    - `.ports` : 나가서 들어가는 pod 또는 IP의 port
+
+`ingress 예시`
+```
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+    name: db-policy
+spec:
+    podSelector:
+        matchLabels:
+            role: db
+    policyTypes:
+        - Ingress
+    ingress:
+        - from:
+            - podSelector:  #기준 1: podSelector와 namespace 모두 일치해야함(AND)
+                  matchLabels:
+                      name: api-pod
+              namespaceSelector:
+                   matchLabels:
+                    name: prod
+            - ipBlock:      #기준2. 기준1 또는 기준2이면 접근 가능(OR)
+                  cidr: 192.168.5.10/32
+          ports:
+            - protocol: TCP
+              port: 3306 
+
+```
+
+`ingress+egress 예시`
+```
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+    name: db-policy
+spec:
+    podSelector:
+        matchLabels:
+            role: db
+    policyTypes:
+        - Ingress
+        - Egress
+    ingress:
+        - from:
+              - podSelector:
+                    matchLabels:
+                        name: api-pod
+          ports:
+            - protocol: TCP
+              port: 3306
+    egress:
+        - to:
+              - ipBlock:
+                    cidr: 192.168.5.10/32
+          ports:
+              - protocol: TCP
+                port: 80
+```
 ## Labs 실습
 
 1. Services
@@ -460,3 +644,37 @@ annotations:
     - **Ingress Resource 생성**
 
 4. Network Policies
+
+Q1
+
+- Sol: networkpolicy를 `netpol`로 축약
+
+Q10
+
+```
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: internal-policy
+spec:
+  policyTypes:
+    - Egress
+  podSelector:
+    matchLabels:
+      name: internal
+  egress:
+    - to:
+      - podSelector:
+          matchLabels:
+            name: payroll
+      ports:
+        - protocol: TCP
+          port: 8080
+    - to:
+      - podSelector:
+          matchLabels:
+            name: mysql
+      ports:
+        - protocol: TCP
+          port: 3306
+```
