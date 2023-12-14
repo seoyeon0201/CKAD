@@ -483,15 +483,355 @@ roleRef:
 
 ## Cluster Roles
 
+- 이전에 다룬 role과 rolebinding은 namespace 내에서 액세스 제어
+- 리소스는 namespace 범위 또는 cluster 범위로 분류됨
+    - ex. namespace dev, default, prod 중 하나의 리소스가 dev와 prod에 존재하는 경우 namespace 범위로 분류X
+
+#### Namespace 범위 리소스
+
+- pod, replicaset, job, deployment, service, secret, role, rolebinding, configmap, pvc
+- `kubectl api-resources --namespaced=true`로 조회 가능
+#### Cluster 범위 리소스
+
+- node, pv, clusterrole, clusterrolebinding, certificatesigningrequests, namespaces
+
+- `kubectl api-resources --namespaced=false`로 조회 가능
+
+#### Clusterroles
+
+1. 클러스터 범위 리소스에서만 차이가 있고 role과 동일
+
+- namespace 전반에 걸친 리소스 액세스 제어
+
+- Cluster Admin
+    - Can view Nodes
+    - Can create Nodes
+    - Can delete Nodes
+
+- Storage Admin
+    - Can view PVs
+    - Can create PVs
+    - Can delete PVCs
+
+2. ClusterRole 생성
+
+`cluster-admin-role.yaml`
+```
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+    name: cluster-administrator
+rules:
+    - apiGroups: [""]
+      resources: ["nodes"]
+      verbs: ["list","get","create","delete"]
+```
+- `kubectl create -f cluster-admin-role.yaml`
+
+#### Clusterrolebinding
+
+1. Clusterrolebinding 생성
+`cluster-admin-role-binding.yaml`
+```
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+    name: cluster-admin-role-binding
+subjects:
+    - kind: User
+      name: cluster-admin
+      apiGroup: rbac.authorization.k8s.io
+roleRef:
+    kind: ClusterRole
+    name: cluster-administrator
+    apiGroup: rbac.authorization.k8s.io
+```
+- `kubectl create -f cluster-admin-role-binding.yaml`
+
 ## Admission Controllers
+
+#### Securing Kubernetes
+
+1. kubectl 사용 pod 생성 시
+
+- `kubectl` > `kube apiserver` (`Authentication` > `Authorization` )  > `create pod`
+
+- 요청이 kubectl을 통해 전송된 경우, kubeconfig 파일(.kube/config)은 인증서가 구성된 걸 알고 > `Authentication` 과정에서는 요청을 보낸 사용자를 식별하는데 책임이 있음 > `Authorization` 과정에서는 사용자가 이 작업을 수행할 수 있는 권한을 가지고 있는지 확인
+
+2. Authorization에서 할 수 없는 작업
+
+- 아래 작업인 경우에만 권한 부여
+    - Only permit images from certain registry
+    - Do not permit runAs root user
+    - Only permit certain capabilities
+    - Pod always has labels
+
+3. Admission Controller 등장
+
+#### Admission Controller
+
+1. cluster 사용 방식을 강화하기 위한 더 나은 보안 조치 시행을 도움
+    - 요청 자체를 변경하거나 포드가 생성되기 전 추가 작업 가능
+
+- `AlwaysPullImages`, `DefaultStoragClass`, `EventRateLimit`, `NamespaceExists`, `NamespaceAutoProvision` 등
+
+    - 존재하지 않는 namespace인 blue에서 pod를 생성하고 싶은 경우, `kubectl run nginx --image nginx --namespace blue` > namespace 존재하지 않는다는 오류 발생
+        -  Authorization까지 거치지만 Admission Controller의 `NamespaceExists`에서 통과하지 못함
+        
+2. View Enabled Admission Controllers
+
+- Admission controller에 `NamespaceAutoProvision` 옵션 추가
+- `kube-apiserver -h | grep enable-admission-plugins` 명령어로 사용 가능한 admission controller 조회 가능
+
+    - `kube-apiserver.service`에 `--enable-admission-plugins=NodeRestriction,NamespaceAutoProvision` 추가 
+    - 같은 위치에 `--disable-admission-plugins=DefaultStorageClass` 추가
+
+
+- kubeadm의 경우, `kubectl exec kube-apiserver-controlplane -n kube-system --kube-apiserver -h | grep enable-admission-plugins` 
+    - `/etc/kubernetes/manifests/kube-apiserver.yaml`의 spec.containers/command에 `--enable-admission-plugins=NodeRestriction,NamespaceAutoProvision` 추가
+
+- 해당 설정 후 blue라는 namespace가 없을때 `kubectl run nginx --image=nginx --namespace=blue`하면 blue라는 namespace 생성 후 pod 생성
+
+- 현재는 NamespaceAutoProvision과 NamespaceExists가 사라지고 NamespaceLifecycle로 변경 > 존재하지 않는 namespace의 경우 아예 생성되지 않음
 
 ## Validating and Mutating Admission Controllers
 
+#### Validating Admission Controller
+
+- 직전에 본 NamespaceExists 등이 유효성 검사 후 허용 또는 거부하는 Validating Admission Controller
+
+#### Mutating Admission Controllers
+
+1. Mutating Admission Controller
+
+- 생성되기 전에 개체 또는 요청 자체를 변경하거나 변경할 수 있음
+
+- `DefaultStorageClass`는 PVC 생성시 storageClassName을 지정하지 않은 경우 default로 지정해주는 admission controller
+
+- `NamespaceAutoProvision`
+
+#### 자체 admission controller
+
+1. webhook을 이용해 클러스터 내부나 외부에 호스팅된 서버를 가리킬 수 있음
+- webhook을 호출하면 Admission Webhook Server 호출
+- webhook server는 요청이 허용되는지 아닌지에 따라 허용 또는 거부함
+
+2. Admission Controller 종류
+- MutatingAdmission Webhook
+- ValidatingAdmission Webhook
+
+#### 자체 admission controller 설치 단계
+
+1. Admission Webhook Server 배포
+
+- Admission Webhook Server는 고유 로직 존재
+- 배포
+    - 어떤 플랫폼에서든 구축될 수 있는 apiserver가 될 수 있어 webhook server 코드는 Kubernetes 문서 페이지에서 확인 가능
+    - 유일한 요구 사항은 mutate를 수락하고 API 유효성 검사하고 웹서버가 기대하는 JSON으로 반응 
+    - admission webhook server 코드를 이해할 필요없고 해당 코드에는 `요청을 승인하거나 거부하는 로직이 있다`는 것만 이해하면 됨
+    - webhook server를 컨테이너화해 Kubernetes cluster에 service(webhook-service)와 함께 배포
+
+2. Webhook(클러스터) 구성
+
+- service에 요청의 유효성을 검사하거나 변형시키기 위해 클러스터 구성
+
+- `clientConfig`: webhook server를 등록하는 위치 구성. 
+    - webhook server를 외부적으로 자체 배포하는 경우 해당 서버의 URL 경로 
+    ```
+    clientConfig:
+        url: "https://external-server.example.com"
+    ```
+    - kubernetes에 배포한 경우, namespace와 service name 이용. apiserver와 webhook server 간의 통신은 TLS 위에 있어야 함
+    ```
+    clientConfig:
+        service:
+            namespace: "webhook-namespace"
+            name: "webhook-service"
+        caBundle: "[TLS]"
+    ```
+
+- `rules` : apiserver를 호출하는 경우
+
+```
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+    name: "pod-policy.example.com"
+webhooks:
+- name: "pod-policy.example.com"
+  clientConfig:
+    service:
+        namespace: "webhook-namespace"
+        name: "webhook-service"
+    caBundle: "Ci0tLS0tQk...tLS0K"
+  rules:
+  - apiGroups: [""]
+    apiVersions: ["v1"]
+    operations: ["CREATE"]
+    resources: ["pods"]
+    scope: "Namespaced"
+```
+
+
 ## API Versions
+
+- 이전에 `/apis` 이야기할 때 아래에 순서대로 API Groups, Versions, Resources, Verbs 존재
+
+- API group은 version으로 /v1 뿐 아니라 /v1alpha1, /v1beta1과 같은 버전 가질 수 있음
+    - /v1이 GA(Genaral Available. 일반적으로 사용 가능한) 버전
+
+1. Alpha
+
+- API가 최초로 개발되어 쿠버네티스 부호에 병합된 후 최초로 출시된 쿠버네티스 버전
+- 테스트가 부족하고 버그가 있을 수 있음
+- 출시될때 사용가능하다는 보장 x
+
+2. Beta
+
+- Alpha 버전의 주요 버그를 모두 고치고 최종 테스트를 마치면 Beta 버전이 됨
+- 종단 간 테스트
+- GA가 아니므로 버그 존재할 수 있음
+- 나중에 GA로 옮기기로 약속
+
+3. GA(Stable)
+
+- Beta 단계에서 몇 개월을 보낸 후 몇 번의 출시 후 API Group은 GA로 이동
+- 신뢰도가 높음
+- default
+
+4. 버전이 여러 개인 경우
+- API Group은 여러 버전을 동시에 지원 가능
+    - ex. /apps의 버전은 /v1, /v1alpha1, /v1beta1 3개 존재
+- nginx 만드는 yaml 파일의 apiVersion으로 apps/v1alpha1, apps/v1beta1, apps/v1 3개 모두 가능
+- 단 `하나의 버전이 저장소 버전`이 될 수 있음 => GA
+    - 어떤 개체가 저장소로 이동하면 저장소 버전으로 변경
+
+5. Preferred Version
+
+- url에 `127.0.0.1:8001/apis/[원하는 API Group명]`에서 조회 가능
+
+6. Storage Version
+
+- 주로 Preferred Version과 동일하지만 반드시 일치하지는 않음
+- 특정 API의 저장소 버전을 볼 수 없음
+
+7. Enabling/Disabling API groups
+
+- 특정 버전을 활성화하거나 비활성화하려면 kube-apiserver의 runtime-config에 추가
+- 수정 후 서비스 재실행해야함
 
 ## API Deprecations
 
+1. API Deprecation Policy Rule #1
+
+- API elements may only be removed by incrementing the version of the API group 
+- v1alpha1은 v1alpha2가 존재하지 않는 이상 계속 존재
+
+2. API Deprecation Policy Rule #2
+
+- API objects must be able to round-trip between API versions in a given release without information loss, with the exception of whose REST resources that do not exist in some versions.
+
+
+3. API Deprecation Policy Rule #4a
+
+- Other than the most recent API versions in each track, older API versions must be supported after their announced deprecation for a duration of no less than:
+    - GA: 12 months or 3 releases (whichever is longer)
+    - Beata: 9 months or 3 releases (whichever is longer)
+    - Alpha: 0 releases
+
+- 반드시 해당 기간동안은 지원되어야함
+
+4. API Deprecation Policy Rule #4b
+- The "preferred" API version and the "storage version" for a given group may not advance until after a release has been made that supports both the new version and the previous version
+
+- GA가 나오기 전에는 storage version이 변하지 않음 => 최초의 beta version
+
+5. API Deprecation Policy Rule #3
+
+- An API version in a given track may not be deprecated until a new API version at least as stable is released.
+
+- v1alpha1이 나와도 기존의 GA인 v1을 제거하면 안됨
+- alpha 버전은 GA 버전을 감소시키지 않음
+
+6. Kubectl convert
+
+- `kubectl convert -f [OLD FILE NAME] --output-version [NEW API VERSION]` 명령어로 버전 변환 가능
+    - 해당 명령어는 plugin으로 별도로 설치해야함
+
 ## Custom Resource Definition
+
+#### Resources
+
+1. resource 생성시 resource 생성 후 그 정보를 etcd 데이터 저장소에 저장
+2. kubernetes 내 `controller`가 내장되어있음
+    - controller는 백그라운드에서 동작하는 프로세스로 관리해야하는 리소스의 상태를 지속적으로 모니터링
+    - 지정한 replicas만큼 리소스 생성
+
+#### Custom Resource
+
+`flightticket.yaml`
+```
+apiVersion: flights.com/v1
+kind: FlightTicket
+metadata:
+    name: my-flight-ticket
+spec:
+    from: Mumbai
+    to: London
+    number: 2
+```
+
+#### Custom Resource Definition(CRD)
+
+- 원하는 유형의 resource 생성 가능
+
+- 위 Custom Resource를 생성할 때 apiVersion이 맞지 않다는 오류 발생 => 미리 만들어줘야함
+- `spec.scope`: namespace 유무
+- `spec.group` : API version이 제공되는 API grou
+- `spec.names.kind`: Custom Resrource의 kind와 일치해야함
+- `spec.names.singular`: 단수 이름
+- `spec.names.plural`: 복수 이름
+- `spec.names.shortNames` : 축약형
+- `spec.versions.schema.openAPIV3Schema`: 어떤 영역을 지원하는지 또는 영역을 지원하는 값의 유형
+    - Custom Resource의 spec에 해당하는 내용
+
+`flightticket-custom-definition.yaml`
+```
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+    name: flighttickets.flights.com
+spec:
+    scope: Namespaced
+    group: flifhts.com
+    names:
+        kind: FlightTicket
+        singular: flightticket
+        plural: flighttickets
+        shortNames:
+            - ft
+    versions:
+        - name: v1
+          served: true
+          storage: true
+          schema:
+            openAPIV3Schema:
+                type: object
+                properties:
+                    spec:
+                        type: object
+                        properties:
+                            from:
+                                type: string
+                            to:
+                                type: string
+                            number:
+                                type: integer
+                                minimum: 1
+                                maximum: 10
+
+```
+
 
 ## Custom Controllers
 
@@ -523,7 +863,46 @@ Q14
 Q1
 
 - `kubectl describe pod kube-apiserver-controlplane -n kube-system`로 kube-apiserver 조회 가능
+- Sol: `cat /etc/kubernetes/manifests/kube-apiserver.yaml`에서 확인 가능
 
 Q3
 
 - namespace 전체 `k get roles -A`
+
+Q8
+
+- Sol: `k get pods --as dev-user`
+
+3. ClusterRoles
+
+Q1
+
+- `k get clusterroles  --no-headers | wc -l`로 헤더 제외 숫자 세기
+
+Q8
+
+- Sol: `kubectl api-resources`에서 축약어 조회 가능
+
+4. Admission Controllers
+
+Q3
+
+- `vim /etc/kubernetes/manifests/kube-apiserver.yaml` 조회
+- Sol: 위와 같이 yaml 파일 들어간 후 `/[찾고자하는단어]` 작성하면 해당 파일에서의 해당 단어가 나타남
+- Sol: 바로 `grep enable-admission-plugins /etc/kubernetes/manifests/kube-apiserver.yaml`도 가능
+
+5. Validating and Mutating Admission Controllers
+
+Q2
+
+- Mutating과 Validating은 Mutating이 먼저 진행되고 Validating이 진행됨
+
+Q11
+
+- Sol: `kubectl get pod pod-with-defaults -o yaml`으로 생성된 pod의 yaml 파일에서 securityContext 조회
+
+6. API Versions/Deprecations
+
+Q
+
+7. 
