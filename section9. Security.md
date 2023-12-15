@@ -903,6 +903,35 @@ Q11
 
 6. API Versions/Deprecations
 
-Q
+Q1
+
+- Sol: 축약어 보고싶은 경우 `kubectl api-resources`
+
+Q2 
+
+- Sol: `1.22.2`에서 첫번째는 major, 두번째는 minor, 세번째가 version
+
+Q3
+
+- Sol: `kubectl explain job`의 출력 version이 `batch/v1`인 경우 batch가 API Group, v1이 버전
+
+Q4
+
+- Sol: `kubectl proxy 8001&` 명령어 실행해 proxy server 백그라운드로 실행 > `curl localhost:8001/apis/authorization.k8s.io`
+
+- `?: 8001은 어떻게 알 수 있지 ?` => custom port 번호
+
+Q5
+
+- Sol
+    - 실패할 수 있으므로 파일 백업 `cp /etc/kubernetes/manifests/kube-apiserver.yaml /root/kube-apiserver.yaml.backup`
+    - 파일 수정 `vim /etc/kubernetes/manifests/kube-apiserver.yaml`에 `--runtime-config=rbac.authorization.k8s.io/v1alpha1`
+        - `runtime-config`는 내장 API를 활성화하거나 비활성화
+    - 적용하는데 시간 소요 => `kubectl get pod -n kube-system`에서 Pending 상태면 Running 될 때까지 기다려야함
+
+Q7
+
+- Sol: convert 설치(Q6) 후 > `kubectl convert -f [파일명] --output-version [바꾸려는 버전]` > `kubectl apply -f [파일명]`
+
 
 7. 
