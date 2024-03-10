@@ -9,6 +9,46 @@ You may delete and recreate the object. Ignore the warnings from the probe.
 
 ## A1
 
+#### `Readiness`와 `Liveness` 문제
+
+- `container port`와 `readinessProbe port`가 일치해야함
+- `livenessProbe.initialDelaySeconds`와 `livenessProbe.periodSeconds` 설정
+- `livenessProbe`를 통해 특정 폴더의 성공 유무에 따라 container 처리
+
+#### 코드
+
+`nginx1401.yaml`
+```
+spec:
+  containers:
+  - image: kodekloud/nginx
+    imagePullPolicy: IfNotPresent
+    name: nginx
+    ports:
+    - containerPort: 9080   #1-1. container port와 readinessProbe port 일치
+      protocol: TCP
+    readinessProbe:
+      failureThreshold: 3
+      httpGet:
+        path: /
+        port: 9080        #1-2. container port와 readinessProbe port 일치
+        scheme: HTTP
+      successThreshold: 1
+      timeoutSeconds: 1
+    livenessProbe:        #3. livenessProbe로 아래 command의 성공 유무에 따라 container 처리 
+      exec:
+        command:
+        - ls
+        - /var/www/html/file_check
+      initialDelaySeconds: 10 #2-1. initialDelaySeconds로 delay 설정 
+      periodSeconds: 60       #2-2. periodSecond로 주기 설정
+```
+
+#### 회고
+
+- livenessProbe를 사용해 성공 유무에 따라 container를 처리할 수 있음
+- `k replace -f [YAML파일명] --force`로 기존의 pod 변경
+
 ## Q2
 
 Create a cronjob called dice that runs every one minute. Use the Pod template located at /root/throw-a-dice. The image throw-dice randomly returns a value between 1 and 6. The result of 6 is considered success and all others are failure.
@@ -19,6 +59,17 @@ If the task is not completed within 20 seconds the job should fail and pods shou
 
 ## A2
 
+#### `CronJob` 문제
+
+- /root/throw-a-dice에 위치한 `pod image를 cronjob 이미지에 동일하게 적용`
+- 1분에 한 번씩 실행되므로 spec.schedule이 `*/1 * * * *`
+- jobTemplate은 backofLimit이 주어진 25로 설정
+- jobTemplate에서 activeDeadlineSeconds를 20초로 설정해 20초가 지난 후에는 pod가 종료되도록 설정
+- jobTemplate에서 completions를 1로 설정
+- restartPolicy는 Never로 설정
+
+#### 코드
+
 `cronjob.yaml`
 ```
 apiVersion: batch/v1
@@ -26,9 +77,10 @@ kind: CronJob
 metadata:
   name: dice
 spec:
-  schedule: "1 * * * *"
+  schedule: "*/1 * * * *"
   jobTemplate:
     spec:
+      completions: 1  #기본 completions가 1이라 없어도 됨 
       activeDeadlineSeconds: 20
       backoffLimit: 25
       template:
@@ -37,12 +89,14 @@ spec:
           - name: dice
             image: throw-dice
             imagePullPolicy: IfNotPresent
-            command:
-            - /bin/sh
-            - -c
-            - date; echo Hello from the Kubernetes cluster
           restartPolicy: Never
 ```
+
+#### 회고
+- pod의 위치를 알려준 것은 pod의 정보(ex.image)를 알려준 것 => cronjob 작성시 필요한 container의 스펙을 알려줌
+- sepc.jobTemplate.spec.completions는 문제에 주어지지만 기본적으로 1
+- cronjob 주기 설정 시 `*/2 * * * *`와 `2 * * * *`는 다름
+  - 전자는 2분마다 반복됨을 의미하고 후자는 매시간 2분에 해당 container를 실행하는 것을 의미
 
 ## Q3
 
@@ -54,6 +108,20 @@ Make sure that the pod is scheduled on controlplane and no other node in the clu
 
 ## A3
 
+#### secret 문제
+
+- dev2406이라는 namespace 있는지 확인 
+  - 없는 경우 namespace 먼저 생성
+  - 있는 경우 pod의 namespace dev2406으로 설정
+- `nodeName`을 지정해 pod가 controlplane에 존재하도록 함
+- image를 busybox로 설정
+- `command`에 3600만큼 sleep되도록 함
+- `secretName`이 dotfile-secret인 secret을 volume으로 가져옴
+  - dotfile-secret은 이전에 이미 만들어져있음
+- volumeMounts로 이전에 가져온 secret을 가져오되 readOnly 상태로 가져오고 mountPath는 /etc/secret-volume 위치에 저장
+
+#### 코드
+
 `my-busybox.yaml`
 ```
 apiVersion: v1
@@ -64,19 +132,29 @@ metadata:
 spec:
   nodeName: controlplane
   containers:
-  - name: my-busybox
+  - name: secret
     image: busybox
     ports:
     - containerPort: 80
-    command: ['sh', '-c', sleep 3600']
+    command: 
+    - sleep 
+    - "3600"
     volumeMounts:
     - name: secret-volume
       readOnly: true
-      mountPath: "/etc/secret-volume"
+      mountPath: /etc/secret-volume
   volumes:
-    - name: secret-volume
-      secret:
-        secretName: dotfile-secret
+  - name: secret-volume
+    secret:
+      secretName: dotfile-secret
+```
+
+#### 회고
+- 이미 만들어진 secret을 secretName으로 가져와 사용
+- `spec.nodeName` 대신 아래 코드도 가능. 동일한 기능
+```
+  nodeSelector:
+    kubernetes.io/hostname: controlplane
 ```
 
 ## Q4
@@ -91,6 +169,14 @@ The service apparels-service should be accessible on http://apparels.ecom-store.
 Here 30093 is the port used by the Ingress Controller
 
 ## A4
+
+#### Ingress 문제
+
+#### 코드
+
+
+#### 회고
+
 
 ## Q5
 
