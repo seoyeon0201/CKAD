@@ -172,14 +172,79 @@ Here 30093 is the port used by the Ingress Controller
 
 #### Ingress 문제
 
+- host name에 따라 실행하는 서비스가 다르게 설정
+
 #### 코드
+
+`ingress.yaml`
+```
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-vh-routing
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+  - host: watch.ecom-store.com
+    http:
+      paths:
+      - pathType: Prefix
+        path: "/video"
+        backend:
+          service:
+            name: video-service
+            port:
+              number: 8080
+  - host: apparels.ecom-store.com
+    http:
+      paths:
+      - pathType: Prefix
+        path: "/wear"
+        backend:
+          service:
+            name: apparels-service
+            port:
+              number: 8080
+```
 
 
 #### 회고
 
+- HTTP 경로가 http://watch.ecom-store.com:30093/video라 port 번호가 30093인줄 알았는데, service의 port 번호를 적어야 함
+  - `kubectl get svc` 사용
+- 아래 코드 없으면 틀림
+  - `rewrite-target`은 ingress에 정의된 경로로 들어오는 요청을 설정된 경로로 전달함을 의미
+  - 서비스를 구분하는 path는 그대로두되, 하위 path만을 요청하고 싶은 경우 Rewrite annotation 사용
+    -`원하는 service에` 하위 path를 그대로 요청 가능
+    - Ingress로 /something을 요청하면 실제 서비스는 /로 요청
+
+```
+annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+```
 
 ## Q5
 
 A pod called dev-pod-dind-878516 has been deployed in the default namespace. Inspect the logs for the container called log-x and redirect the warnings to /opt/dind-878516_logs.txt on the controlplane node
 
 ## A5
+
+#### log 문제
+
+- container 이름이 log-x인 container 로그 확인
+  - `kubectl logs [POD이름] -c [CONTAINER이름]`
+- 위 container에 존재하는 모든 WARNING을 `/opt/dind-878516_logs.txt`에 리다이렉트
+  - `kubectl logs [POD이름] -c [CONTAINER이름] | grep WARNING > [옮길 경로]`
+  - kubectl logs dev-pod-dind-878516 -c log-x | grep WARNING > /opt/dind-878516_logs.txt
+- cat 명령어로 확인
+  - `cat [조회하고싶은위치]`
+  - cat /opt/dind-878516_logs.txt
+
+#### 코드
+
+`kubectl logs dev-pod-dind-878516 -c log-x | grep WARNING > /opt/dind-878516_logs.txt`
+
+#### 회고
+
+- log 중 WARNING을 `grep할 때에는 반드시 대문자`로 써야 가져올 수 있음
