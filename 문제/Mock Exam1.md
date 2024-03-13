@@ -92,7 +92,7 @@ Labels: tier=msg
 
 `k apply -f messaging.yaml`
 
-## Q5 -Again
+## Q5
 
 A replicaset rs-d33393 is created. However the pods are not coming up. Identify and fix the issue.
 
@@ -249,6 +249,9 @@ Secret 3: DB_Password=password123
 
 `kubectl create secret generic db-secret-xxdf --from-literal=DB_Host=sql01 --from-literal=DB_User=root --from-literal=DB_Password=password123`
 
+- 위처럼 작성하면 Opaque Type의 Secret 생성
+    - Opaque란 일반적인 타입의 Secret
+
 ## Q10
 
 Update pod app-sec-kff3345 to run as Root user and with the SYS_TIME capability.
@@ -282,7 +285,7 @@ spec:
 
 `k replace -f app-sec-kff3345.yaml --force`
 
-## Q11 -Again
+## Q11
 
 Export the logs of the e-com-1123 pod to the file /opt/outputs/e-com-1123.logs
 
@@ -301,6 +304,8 @@ Task Completed
 `k get pods --all-namespaces`로 namespace 확인
 
 `k describe pod e-com-1123 -n e-commerce`에서 container name (simple-webapp) 확인
+
+`k logs e-com-1123 -n e-commerce -c simple-webapp > /opt/outputs/e-com-1123.logs`
 
 ## Q12
 
@@ -341,7 +346,7 @@ spec:
     path: "/pv/data-analytics"
 ```
 
-## Q13 -Again
+## Q13
 
 Create a redis deployment using the image redis:alpine with 1 replica and label app=redis. Expose it via a ClusterIP service called redis on port 6379. Create a new Ingress Type NetworkPolicy called redis-access which allows only the pods with label access=redis to access the deployment.
 
@@ -388,7 +393,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      access: redis
+      app: redis
   policyTypes:
   - Ingress
   ingress:
@@ -396,12 +401,15 @@ spec:
     - podSelector:
         matchLabels:
           access: redis
-    ports:
+    ports:  
     - protocol: TCP
       port: 6379
 ```
 
-## Q14 -Again
+- labels를 무작정 연결하지 말고 생각하면서 연결할 것
+    - 본 문제에서는 podSelector는 모든 pod와 연결되어야하므로 `app: redis`, Ingress로 들어오는 네트워크는 `access: redis`인 label
+
+## Q14
 
 Create a Pod called sega with two containers:
 
@@ -427,6 +435,9 @@ Container tails created correctly?
 apiVersion: v1
 kind: Pod
 metadata:
+  creationTimestamp: null
+  labels:
+    run: sega
   name: sega
 spec:
   containers:
@@ -434,10 +445,19 @@ spec:
     name: tails
     command:
     - sleep
-    - 3600
+    - "3600"
   - image: nginx
     name: sonic
     env:
     - name: NGINX_PORT
       value: "8080"
+    resources: {}
+  dnsPolicy: ClusterFirst
+  restartPolicy: Always
+status: {}
 ```
+
+
+## 의문
+
+- PV와 NetworkPolicy는 명령어로 생성할 수 없는가?
