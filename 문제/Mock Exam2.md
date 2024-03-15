@@ -29,9 +29,17 @@ Deployment 생성 후 Service expose
 
 `k expose deployment my-webapp --port 80 --name front-end-service --type=NodePort -o yaml --dry-run=client > front-end-service.yaml`
 
-- yaml 파일에 nodePort port번호 작성
+- yaml 파일에 nodePort port 변경
 
-우측 상단의 "View Port" 클릭해 nodePort 번호 입력해 연결 확인
+확인 
+
+- 우측 상단의 "View Port" 클릭해 nodePort 번호 입력해 연결 확인
+- `curl [CLUSTER IP]:[PORT]`로 확인
+  - 이떄 port는 nodeport가 아닌 service port
+
+### 회고
+
+- expose 명령어로 서비스 노출시킬 때 --port 옵션은 service port 번호이고, node port 번호는 yaml 파일에 직접 작성해야함 !
 
 ## Q2
 
@@ -84,11 +92,13 @@ spec:
 status: {}
 ```
 
-- `k describe pod alpha`에서 node 확인 가능
+- `k describe pod alpha` 또는 `k get pod -o wide`에서 node 확인 가능
 
-### 개념 or 회고
+### 회고
 
-## Q3 - 틀림 다시 !
+- spec.tolerations.operator의 기본 값이 "Equal"이므로 effect, key, value만 작성해도 됨
+
+## Q3 ✏️
 
 Apply a label app_type=beta to node controlplane. Create a new deployment called beta-apps with image: nginx and replicas: 3. Set Node Affinity to the deployment to place the PODs on controlplane only.
 
@@ -141,15 +151,14 @@ spec:
         app: beta-apps
     spec:
       affinity:
-        podAffinity:
+        nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchExpressions:
+            nodeSelectorTerms:
+            - matchExpressions:
               - key: app_type
                 operator: In
-                values:
-                - "beta"
-            topologyKey: topology.kubernetes.io/zone
+                values:   #또는 values: ["beta"]
+                - beta
       containers:
       - image: nginx
         name: nginx
@@ -157,7 +166,9 @@ spec:
 status: {}
 ```
 
-## Q4
+`k get pod -o wide`로 확인
+
+## Q4 ✏️
 
 Create a new Ingress Resource for the service my-video-service to be made available at the URL: http://ckad-mock-exam-solution.com:30093/video.
 
@@ -181,6 +192,8 @@ http://ckad-mock-exam-solution.com:30093/video accessible?
 
 #### 코드
 
+방법1
+
 `k create ingress ingress --rule=ckad-mock-exam-solution.com/video=my-video-service:30093 -o yaml --dry-run=client > ingress.yaml`
 
 `ingress.yaml`
@@ -202,16 +215,31 @@ spec:
           service:
             name: my-video-service
             port:
-              number: 30093
+              number: 8080
         path: /video
         pathType: Exact
 status:
   loadBalancer: {}
 ```
 
+방법2
+
+`kubectl create ingress ingress --rule="ckad-mock-exam-solution.com/video*=my-video-service:8080" -o yaml --dry-run=client > ingress.yaml` 
+
+yaml 파일에서 `annotation: nginx.ingress.kubernetes.io/rewrite-target: /` 추가
+
+```
+metadata:
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+```
+
+- --rule="ckad-mock-exam-solution.com/video*=my-video-service:8080"에서 `/video*`는 video로 시작하는 `모든 path` 의미
+  - *(별표) 생략가능 !
+
 `curl http://ckad-mock-exam-solution.com:30093/video`로 연결 확인
 
-## Q5 - 모르겠음 ㅠ
+## Q5 ✏️
 
 We have deployed a new pod called pod-with-rprobe. This Pod has an initial delay before it is Ready. Update the newly created pod pod-with-rprobe with a readinessProbe using the given spec
 
@@ -226,33 +254,256 @@ readinessProbe with the correct httpGet port?
 ```
 ## A5
 
-#### ReadinessProbe 문제? LivenessProbe 문제?
+#### ReadinessProbe 문제
 
 #### 코드
 
-livenessProbe 코드 추가
+readinessProbe 코드 추가
 
 `rprobe.yaml`
 ```
 spec.
   containers:
     ...
-    livenessProbe:
+    readinessProbe:
       httpGet:
         path: /ready
         port: 8080
 ```
-- pod에 오류 발생
+
+## Q6
+
+Create a new pod called nginx1401 in the default namespace with the image nginx. Add a livenessProbe to the container to restart it if the command ls /var/www/html/probe fails. This check should start after a delay of 10 seconds and run every 60 seconds.
 
 
+You may delete and recreate the object. Ignore the warnings from the probe.
+```
+Pod created correctly with the livenessProbe?
+```
+
+## A6
+
+#### LivenessProbe 문제
+
+#### 코드
+
+`nginx1401.yaml`
+```
+apiVersion: v1
+kind: Pod
+metadata:
+  creationTimestamp: null
+  labels:
+    run: nginx1401
+  name: nginx1401
+spec:
+  containers:
+  - image: nginx
+    name: nginx1401
+    resources: {}
+    livenessProbe:
+      exec:   #또는 exec.command: ["ls /var/www/html/probe"]
+        command:
+        - ls
+        - /var/www/html/probe
+      initialDelaySeconds: 10
+      periodSeconds: 60
+  dnsPolicy: ClusterFirst
+  restartPolicy: Always
+status: {}
+```
+
+## Q7
+
+Create a job called whalesay with image docker/whalesay and command "cowsay I am going to ace CKAD!".
+
+completions: 10
+
+backoffLimit: 6
+
+restartPolicy: Never
 
 
+This simple job runs the popular cowsay game that was modifed by docker…
+```
+Job "whalesay" uses correct image?
 
+Job "whalesay" configured with completions = 10?
+
+Job "whalesay" with backoffLimit = 6
+
+Job run's the command "cowsay I am going to ace CKAD!"?
+
+Job "whalesay" completed successfully?
+```
+## A7
+
+#### Job 문제
+#### 코드
+
+`job.yaml`
+```
+apiVersion: batch/v1
+kind: Job
+metadata:
+  creationTimestamp: null
+  name: whalesay
+spec:
+  completions: 10
+  backoffLimit: 6
+  template:
+    metadata:
+      creationTimestamp: null
+    spec:
+      containers:
+      - image: docker/whalesay
+        name: whalesay
+        resources: {}
+        # command 방법1
+        command:
+        - sh
+        - -c
+        - "cowsay I am going to ace CKAD!"
+
+        # command 방법2
+
+        command: ["sh","-c", "cowsay I am going to ace CKAD!"]
+
+        # command 방법3
+        command: ["printenv"]
+        args: ["cowsay I am going to ace CKAD!"]
+
+      restartPolicy: Never
+status: {}
+```
+
+## Q8
+
+Create a pod called multi-pod with two containers.
+
+Container 1:
+name: jupiter, image: nginx
+
+Container 2:
+name: europa, image: busybox
+command: sleep 4800
+
+Environment Variables:
+
+Container 1:
+
+type: planet
+
+Container 2:
+
+type: moon
+
+```
+Pod Name: multi-pod
+
+Container 1: jupiter
+
+Container 2: europa
+
+Container europa commands set correctly?
+
+Container 1 Environment Value Set
+
+Container 2 Environment Value Set
+```
+
+## A8
+
+#### Multi container 문제
+#### 코드
+
+`multi-pod.yaml`
+```
+apiVersion: v1
+kind: Pod
+metadata:
+  creationTimestamp: null
+  labels:
+    run: multi-pod
+  name: multi-pod
+spec:
+  containers:
+  - image: nginx
+    name: jupiter
+    env:
+    - name: type
+      value: "planet"
+    resources: {}
+  - image: busybox
+    name: europa
+    # command 방법1
+    command: ["/bin/sh", "-c","sleep 4800"]
+
+    # command 방법2
+    command: ["sleep", "4800"]
+
+    # command 방법3
+    command:
+    - sleep
+    - "4800"
+    env:
+    - name: type
+      value: "moon"
+  dnsPolicy: ClusterFirst
+  restartPolicy: Always
+status: {}
+```
+
+## Q9
+
+Create a PersistentVolume called custom-volume with size: 50MiB reclaim policy:retain, Access Modes: ReadWriteMany and hostPath: /opt/data
+
+```
+PV custom-volume created?
+
+custom-volume uses the correct access mode?
+
+PV custom-volume has the correct storage capacity?
+
+PV custom-volume has the correct host path?
+```
+
+## A9
+#### Persistent Volume 문제
+#### 코드
+
+`custom-volume.yaml`
+```
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: custom-volume
+  labels:
+    type: local
+spec:
+  storageClassName: manual
+  capacity:
+    storage: 50Mi
+  accessModes:
+    - ReadWriteMany
+  hostPath:
+    path: "/opt/data"
+```
 
 ## 궁금증
 
 #### Q1
 
 - nodeport의 nodeport 번호는 command로 지정할 수 없나?
+  - 불가능
 
-- nodePort 서비스 생성 후 연결되었는지 확인하는 방법 => 현재는 오른쪽 상단의 View Port로 확인
+- NodePort 서비스 생성 후 연결되었는지 확인하는 방법 => 현재는 오른쪽 상단의 View Port로 확인
+
+  - `curl [CLUSTER IP ADDRESS]:[SERVICE PORT]`
+    - 이때 CLUSTER IP ADDRESS는 `k get svc`에서 확인 가능
+    - SERVICE PORT는 Nodeport가 아닌 port 번호
+
+#### Q9
+
+- PV를 명령어로 생성하는법
+  - 불가능
